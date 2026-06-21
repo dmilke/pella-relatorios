@@ -64,7 +64,7 @@ export function Quantitativo() {
   const mes = getMonth(new Date()) + 1
   const ano = getYear(new Date())
 
-  async function carregarRegistrosDoMes() {
+  async function carregarRegistrosDoMes(fallback: any[] = []) {
     if (!user) return
 
     const inicioMes = format(new Date(ano, mes - 1, 1), 'yyyy-MM-dd')
@@ -82,7 +82,12 @@ export function Quantitativo() {
 
     const { data } = await query.order('data_referencia', { ascending: false })
 
-    setExistingRecords(data ?? [])
+    if (data && data.length > 0) {
+      setExistingRecords(data)
+      return
+    }
+
+    setExistingRecords(fallback)
   }
 
   function getNomeAtividade(id: string) {
@@ -120,7 +125,7 @@ export function Quantitativo() {
       setLoading(false)
     }
     load()
-  }, [])
+  }, [user?.id, user?.perfil])
 
   // Carregar subatividades quando atividade mudar
   const handleAtividadeChange = useCallback(async (index: number, atividadeId: string) => {
@@ -190,7 +195,13 @@ export function Quantitativo() {
     } else {
       setRegistros([])
       setSuccess('Registro salvo com sucesso.')
-      await carregarRegistrosDoMes()
+
+      const fallbackRegistros = registrosParaSalvar.map((r, index) => ({
+        ...r,
+        id: `temp-${Date.now()}-${index}`,
+      }))
+
+      await carregarRegistrosDoMes(fallbackRegistros)
     }
 
     setSaving(false)
