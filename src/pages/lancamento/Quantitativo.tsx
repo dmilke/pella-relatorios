@@ -259,6 +259,14 @@ export function Quantitativo() {
     setError(null)
     setSuccess(null)
 
+    for (const r of registros) {
+      if (r.qtd_idosos + r.qtd_pcd + r.qtd_colaboradores === 0) {
+        setError('Cada registro deve ter pelo menos um atendimento (Idosos, PCD ou Colaboradores).')
+        setSaving(false)
+        return
+      }
+    }
+
     const profissionalAutenticado = user?.id ?? ''
 
     const payloadBase = (r: RegistroForm) => ({
