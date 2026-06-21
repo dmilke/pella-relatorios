@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
 import { Loading } from '@/components/ui/Loading'
 import { Save, Pencil, Trash2 } from 'lucide-react'
-import { getMonth, getYear } from 'date-fns'
+import { format, getMonth, getYear } from 'date-fns'
 
 interface DescritivoForm {
   atividade_id: string
@@ -22,6 +22,7 @@ interface DescritivoRegistro extends DescritivoForm {
   profissional_id: string
   mes: number
   ano: number
+  atualizado_em: string
 }
 
 const meses = [
@@ -61,6 +62,9 @@ export function Descritivo() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const perPage = 20
+  const canChooseProfissional = isAdminOrApoio()
 
   function getNomeProfissional(id: string) {
     return profissionais.find((p) => p.id === id)?.nome_completo ?? id
@@ -75,21 +79,25 @@ export function Descritivo() {
     return texto.length > 70 ? `${texto.slice(0, 70)}...` : texto
   }
 
-  async function carregarRegistrosDoMes() {
+  async function carregarRegistrosDoMes(profissionalIdOverride?: string) {
     if (!user) return
+
+    const filtroProfissionalId = profissionalIdOverride ?? profissionalId
+    if (!filtroProfissionalId) {
+      setRegistrosDoMes([])
+      return
+    }
 
     let query = supabase
       .from('descritivos_mensais')
       .select('*')
+      .eq('profissional_id', filtroProfissionalId)
       .eq('mes', Number(mes))
       .eq('ano', Number(ano))
 
-    if (!isAdminOrApoio()) {
-      query = query.eq('profissional_id', user.id)
-    }
-
     const { data } = await query.order('criado_em', { ascending: false })
     setRegistrosDoMes(data ?? [])
+    setPage(1)
   }
 
   useEffect(() => {
@@ -122,12 +130,23 @@ export function Descritivo() {
         .order('nome_completo')
       if (profs) setProfissionais(profs)
 
-      await carregarRegistrosDoMes()
+      const selectedProfissionalId =
+        canChooseProfissional && profs?.some((p) => p.id === profissionalId)
+          ? profissionalId
+          : canChooseProfissional
+            ? profs?.[0]?.id ?? ''
+            : user?.id ?? ''
+
+      if (canChooseProfissional && selectedProfissionalId && selectedProfissionalId !== profissionalId) {
+        setProfissionalId(selectedProfissionalId)
+      }
+
+      await carregarRegistrosDoMes(selectedProfissionalId)
 
       setLoading(false)
     }
     load()
-  }, [mes, ano, user?.id, user?.perfil])
+  }, [mes, ano, user?.id, user?.perfil, profissionalId])
 
   useEffect(() => {
     if (!descForm.atividade_id || !mes || !ano) return
@@ -192,7 +211,9 @@ export function Descritivo() {
     if (editingId) {
       ;({ error: err } = await supabase.from('descritivos_mensais').update(payload).eq('id', editingId))
     } else {
-      ;({ error: err } = await supabase.from('descritivos_mensais').insert(payload))
+      ;({ error: err } = await supabase
+        .from('descritivos_mensais')
+        .upsert(payload, { onConflict: 'profissional_id,atividade_id,mes,ano' }))
     }
 
     if (err) {
@@ -242,7 +263,14 @@ export function Descritivo() {
       })
     }
 
-    await carregarRegistrosDoMes()
+    setRegistrosDoMes((prev) => prev.filter((registro) => registro.id !== id))
+  }
+
+  const totalPages = Math.max(1, Math.ceil(registrosDoMes.length / perPage))
+  const pagedRecords = registrosDoMes.slice((page - 1) * perPage, page * perPage)
+
+  function getMesLabel(valor: number) {
+    return meses.find((m) => m.value === String(valor))?.label ?? String(valor)
   }
 
   if (loading) return <Loading />
@@ -268,11 +296,11 @@ export function Descritivo() {
 
       <div className="rounded-xl bg-white shadow-sm border border-gray-200 p-6 space-y-6">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
-          {isAdminOrApoio() && (
-            <Select
-              label="Profissional"
-              value={profissionalId}
-              onChange={(e) => setProfissionalId(e.target.value)}
+            {canChooseProfissional && (
+              <Select
+                label="Profissional"
+                value={profissionalId}
+                onChange={(e) => setProfissionalId(e.target.value)}
               options={profissionais.map((p) => ({ value: p.id, label: p.nome_completo }))}
               placeholder="Selecione..."
             />
@@ -381,51 +409,66 @@ export function Descritivo() {
           {registrosDoMes.length === 0 ? (
             <div className="px-4 py-6 text-sm text-gray-500">Nenhum descritivo lançado neste mês.</div>
           ) : (
+            <>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200">
-                    {(isAdminOrApoio() || user?.perfil === 'admin') && (
-                      <th className="px-4 py-3 text-left font-medium text-gray-700">Profissional</th>
-                    )}
-                    <th className="px-4 py-3 text-left font-medium text-gray-700">Atividade</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-700">Resumo</th>
-                    <th className="px-4 py-3 text-center font-medium text-gray-700">Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {registrosDoMes.map((r) => (
-                    <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
-                      {(isAdminOrApoio() || user?.perfil === 'admin') && (
-                        <td className="px-4 py-3 text-gray-600">{getNomeProfissional(r.profissional_id)}</td>
-                      )}
-                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{getNomeAtividade(r.atividade_id)}</td>
-                      <td className="px-4 py-3 text-gray-600 max-w-[420px] truncate whitespace-nowrap">
-                        {getResumo(r.atividade_desenvolvida)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-center gap-2">
-                          <button
-                            onClick={() => editarRegistro(r)}
-                            className="rounded-lg p-1 text-gray-500 hover:bg-gray-100"
-                            title="Editar"
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => excluirRegistro(r.id)}
-                            className="rounded-lg p-1 text-red-500 hover:bg-red-50"
-                            title="Excluir"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
+                    <tr className="bg-gray-50 border-b border-gray-200">
+                      <th className="px-4 py-3 text-left font-medium text-gray-700">Atividade</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-700">Mês</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-700">Ano</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-700">Data da última atualização</th>
+                      <th className="px-4 py-3 text-center font-medium text-gray-700">Ações</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {pagedRecords.map((r) => (
+                      <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
+                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{getNomeAtividade(r.atividade_id)}</td>
+                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{getMesLabel(r.mes)}</td>
+                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{r.ano}</td>
+                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
+                          {format(new Date(r.atualizado_em), 'dd/MM/yyyy HH:mm')}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => editarRegistro(r)}
+                              className="rounded-lg p-1 text-gray-500 hover:bg-gray-100"
+                              title="Editar"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => excluirRegistro(r.id)}
+                              className="rounded-lg p-1 text-red-500 hover:bg-red-50"
+                              title="Excluir"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {registrosDoMes.length > perPage && (
+                <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3 text-sm">
+                  <span className="text-gray-500">
+                    Página {page} de {totalPages}
+                  </span>
+                  <div className="flex gap-2">
+                    <Button variant="outline" disabled={page === 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+                      Anterior
+                    </Button>
+                    <Button variant="outline" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>
+                      Próxima
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
