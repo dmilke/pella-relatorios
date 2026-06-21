@@ -59,12 +59,25 @@ export function Quantitativo() {
   const [existingRecords, setExistingRecords] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
 
   const mes = getMonth(new Date()) + 1
   const ano = getYear(new Date())
 
+  function getNomeAtividade(id: string) {
+    return atividades.find((a) => a.id === id)?.nome ?? id
+  }
+
+  function getNomeUnidade(id: string | null) {
+    if (!id) return '—'
+    return unidades.find((u) => u.id === id)?.nome ?? id
+  }
+
   useEffect(() => {
     async function load() {
+      const inicioMes = format(new Date(ano, mes - 1, 1), 'yyyy-MM-dd')
+      const inicioProximoMes = format(new Date(ano, mes, 1), 'yyyy-MM-dd')
+
       const [profRes, ativRes, unidRes, bloqueioRes] = await Promise.all([
         supabase.from('usuarios').select('id, nome_completo').eq('ativo', true).eq('tem_login', true).order('nome_completo'),
         supabase.from('atividades').select('id, nome').eq('ativa', true).order('nome'),
@@ -89,7 +102,9 @@ export function Quantitativo() {
           .from('registros_atividade')
           .select('*')
           .eq('profissional_id', user.id)
-          .eq('data_referencia', format(new Date(), 'yyyy-MM') + '-%')
+          .gte('data_referencia', inicioMes)
+          .lt('data_referencia', inicioProximoMes)
+          .order('data_referencia', { ascending: false })
         if (data) setExistingRecords(data)
       }
 
@@ -145,6 +160,7 @@ export function Quantitativo() {
   async function salvar() {
     setSaving(true)
     setError(null)
+    setSuccess(null)
 
     const registrosParaSalvar = registros.map((r) => ({
       profissional_id: r.profissional_id,
@@ -164,6 +180,22 @@ export function Quantitativo() {
       setError(err.message)
     } else {
       setRegistros([])
+      setSuccess('Registro salvo com sucesso.')
+
+      if (user && !isAdminOrApoio()) {
+        const inicioMes = format(new Date(ano, mes - 1, 1), 'yyyy-MM-dd')
+        const inicioProximoMes = format(new Date(ano, mes, 1), 'yyyy-MM-dd')
+
+        const { data } = await supabase
+          .from('registros_atividade')
+          .select('*')
+          .eq('profissional_id', user.id)
+          .gte('data_referencia', inicioMes)
+          .lt('data_referencia', inicioProximoMes)
+          .order('data_referencia', { ascending: false })
+
+        if (data) setExistingRecords(data)
+      }
     }
 
     setSaving(false)
@@ -202,6 +234,12 @@ export function Quantitativo() {
           {error && (
             <div className="rounded-lg bg-red-50 border border-red-200 p-4 text-sm text-red-700">
               {error}
+            </div>
+          )}
+
+          {success && (
+            <div className="rounded-lg bg-green-50 border border-green-200 p-4 text-sm text-green-700">
+              {success}
             </div>
           )}
 
@@ -321,6 +359,40 @@ export function Quantitativo() {
               </Button>
             </div>
           </div>
+
+          {existingRecords.length > 0 && (
+            <div className="rounded-xl bg-white shadow-sm border border-gray-200 overflow-hidden">
+              <div className="border-b border-gray-200 px-4 py-3">
+                <h2 className="text-sm font-semibold text-gray-900">Registros do mês</h2>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-200">
+                      <th className="px-4 py-3 text-left font-medium text-gray-700">Data</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-700">Atividade</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-700">Unidade</th>
+                      <th className="px-4 py-3 text-center font-medium text-gray-700">Idosos</th>
+                      <th className="px-4 py-3 text-center font-medium text-gray-700">PCD</th>
+                      <th className="px-4 py-3 text-center font-medium text-gray-700">Colab.</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {existingRecords.map((r) => (
+                      <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
+                        <td className="px-4 py-3 text-gray-600">{r.data_referencia}</td>
+                        <td className="px-4 py-3 text-gray-600">{getNomeAtividade(r.atividade_id)}</td>
+                        <td className="px-4 py-3 text-gray-600">{getNomeUnidade(r.unidade_id)}</td>
+                        <td className="px-4 py-3 text-center text-gray-600">{r.qtd_idosos}</td>
+                        <td className="px-4 py-3 text-center text-gray-600">{r.qtd_pcd}</td>
+                        <td className="px-4 py-3 text-center text-gray-600">{r.qtd_colaboradores}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>
