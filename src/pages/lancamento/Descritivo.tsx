@@ -10,6 +10,7 @@ import { getMonth, getYear } from 'date-fns'
 
 interface DescritivoForm {
   atividade_id: string
+  atividade_desenvolvida: string
   frequencia: string
   objetivos: string
   relato: string
@@ -38,6 +39,7 @@ export function Descritivo() {
   const [profissionais, setProfissionais] = useState<{ id: string; nome_completo: string }[]>([])
   const [descForm, setDescForm] = useState<DescritivoForm>({
     atividade_id: '',
+    atividade_desenvolvida: '',
     frequencia: '',
     objetivos: '',
     relato: '',
@@ -104,6 +106,7 @@ export function Descritivo() {
         if (data) {
           setDescForm({
             atividade_id: data.atividade_id,
+            atividade_desenvolvida: data.atividade_desenvolvida ?? '',
             frequencia: data.frequencia ?? '',
             objetivos: data.objetivos ?? '',
             relato: data.relato ?? '',
@@ -112,6 +115,7 @@ export function Descritivo() {
         } else {
           setDescForm((prev) => ({
             ...prev,
+            atividade_desenvolvida: '',
             frequencia: '',
             objetivos: '',
             relato: '',
@@ -134,6 +138,7 @@ export function Descritivo() {
       atividade_id: descForm.atividade_id,
       mes: Number(mes),
       ano: Number(ano),
+      atividade_desenvolvida: descForm.atividade_desenvolvida || null,
       frequencia: descForm.frequencia || null,
       objetivos: descForm.objetivos || null,
       relato: descForm.relato || null,
@@ -225,6 +230,17 @@ export function Descritivo() {
 
         {descForm.atividade_id && (
           <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Atividade Desenvolvida
+              </label>
+              <textarea
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary min-h-[120px]"
+                value={descForm.atividade_desenvolvida}
+                onChange={(e) => setDescForm((prev) => ({ ...prev, atividade_desenvolvida: e.target.value }))}
+                placeholder="Descreva a atividade desenvolvida..."
+              />
+            </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Frequência Semanal da Atividade e Grupos Atendidos

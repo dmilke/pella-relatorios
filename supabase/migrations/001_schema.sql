@@ -116,6 +116,7 @@ create table descritivos_mensais (
   atividade_id uuid not null references atividades(id),
   mes integer not null check (mes between 1 and 12),
   ano integer not null,
+  atividade_desenvolvida text,
   frequencia text,
   objetivos text,
   relato text,

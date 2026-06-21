@@ -81,6 +81,7 @@ export interface DescritivoMensal {
   atividade_id: string
   mes: number
   ano: number
+  atividade_desenvolvida: string | null
   frequencia: string | null
   objetivos: string | null
   relato: string | null
