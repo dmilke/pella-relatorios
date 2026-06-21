@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { UNIDADES } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
 import { usePermission } from '@/hooks/usePermission'
 import { Button } from '@/components/ui/Button'
@@ -32,6 +31,11 @@ interface AtividadeOption {
   subatividades: { id: string; nome: string }[]
 }
 
+interface UnidadeOption {
+  id: string
+  nome: string
+}
+
 const emptyRegistro: RegistroForm = {
   profissional_id: '',
   atividade_id: '',
@@ -49,6 +53,7 @@ export function Quantitativo() {
   const [registros, setRegistros] = useState<RegistroForm[]>([])
   const [profissionais, setProfissionais] = useState<ProfissionalOption[]>([])
   const [atividades, setAtividades] = useState<AtividadeOption[]>([])
+  const [unidades, setUnidades] = useState<UnidadeOption[]>([])
   const [periodoInfo, setPeriodoInfo] = useState<{ bloqueado: boolean; prazo: string } | null>(null)
   const [saving, setSaving] = useState(false)
   const [existingRecords, setExistingRecords] = useState<any[]>([])
@@ -60,9 +65,10 @@ export function Quantitativo() {
 
   useEffect(() => {
     async function load() {
-      const [profRes, ativRes, bloqueioRes] = await Promise.all([
+      const [profRes, ativRes, unidRes, bloqueioRes] = await Promise.all([
         supabase.from('usuarios').select('id, nome_completo').eq('ativo', true).eq('tem_login', true).order('nome_completo'),
         supabase.from('atividades').select('id, nome').eq('ativa', true).order('nome'),
+        supabase.from('unidades').select('id, nome').eq('ativa', true).order('nome'),
         supabase.rpc('periodo_bloqueado', { p_usuario_id: user?.id, p_mes: mes, p_ano: ano }),
       ])
 
@@ -71,6 +77,7 @@ export function Quantitativo() {
         const ativs = ativRes.data.map((a) => ({ ...a, subatividades: [] }))
         setAtividades(ativs)
       }
+      if (unidRes.data) setUnidades(unidRes.data)
       setPeriodoInfo({
         bloqueado: bloqueioRes.data ?? false,
         prazo: `5º dia útil de ${format(new Date(ano, mes), 'MMMM/yyyy')}`,
@@ -260,7 +267,7 @@ export function Quantitativo() {
                         <Select
                           value={r.unidade_id}
                           onChange={(e) => updateLinha(i, 'unidade_id', e.target.value)}
-                          options={UNIDADES.map((u) => ({ value: u, label: u }))}
+                          options={unidades.map((u) => ({ value: u.id, label: u.nome }))}
                           placeholder="(opcional)"
                         />
                       </td>
