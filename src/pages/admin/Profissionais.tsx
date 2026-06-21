@@ -88,10 +88,39 @@ export function Profissionais() {
 
       if (err) {
         setError(err.message)
-      } else {
-        await loadUsuarios()
-        resetForm()
+        setSaving(false)
+        return
       }
+
+      if (form.senha) {
+        const { data: { session } } = await supabase.auth.getSession()
+        const token = session?.access_token
+
+        const res = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/redefinir-senha`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              usuario_id: editId,
+              nova_senha: form.senha,
+            }),
+          }
+        )
+
+        if (!res.ok) {
+          const errData = await res.json()
+          setError(errData.error || 'Erro ao redefinir senha')
+          setSaving(false)
+          return
+        }
+      }
+
+      await loadUsuarios()
+      resetForm()
     } else {
       if (form.tem_login) {
         const { data: { session } } = await supabase.auth.getSession()
@@ -201,13 +230,14 @@ export function Profissionais() {
                 required={form.tem_login}
               />
             )}
-            {form.tem_login && !editId && (
+            {form.tem_login && (
               <Input
                 label="Senha"
                 type="password"
                 value={form.senha}
                 onChange={(e) => setForm((f) => ({ ...f, senha: e.target.value }))}
                 required={form.tem_login && !editId}
+                placeholder={editId ? 'Deixe em branco para manter' : undefined}
               />
             )}
           </div>
