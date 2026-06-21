@@ -93,33 +93,12 @@ export function Profissionais() {
       }
 
       if (form.senha) {
-        try {
-          const { data: { session } } = await supabase.auth.getSession()
-          const token = session?.access_token
+        const { error: pwError } = await supabase.functions.invoke('redefinir-senha', {
+          body: { usuario_id: editId, nova_senha: form.senha },
+        })
 
-          const res = await fetch(
-            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/redefinir-senha`,
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${token}`,
-              },
-              body: JSON.stringify({
-                usuario_id: editId,
-                nova_senha: form.senha,
-              }),
-            }
-          )
-
-          if (!res.ok) {
-            const errData = await res.json()
-            setError(errData.error || 'Erro ao redefinir senha')
-            setSaving(false)
-            return
-          }
-        } catch {
-          setError('Erro de conexão ao redefinir senha. Tente novamente.')
+        if (pwError) {
+          setError(pwError.message || 'Erro ao redefinir senha')
           setSaving(false)
           return
         }
