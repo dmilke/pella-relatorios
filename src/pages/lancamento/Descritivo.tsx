@@ -5,7 +5,7 @@ import { usePermission } from '@/hooks/usePermission'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
 import { Loading } from '@/components/ui/Loading'
-import { Save } from 'lucide-react'
+import { Save, Pencil, Trash2 } from 'lucide-react'
 import { getMonth, getYear } from 'date-fns'
 
 interface DescritivoForm {
@@ -15,6 +15,13 @@ interface DescritivoForm {
   objetivos: string
   relato: string
   acontecimento: string
+}
+
+interface DescritivoRegistro extends DescritivoForm {
+  id: string
+  profissional_id: string
+  mes: number
+  ano: number
 }
 
 const meses = [
@@ -37,6 +44,7 @@ export function Descritivo() {
   const { isAdminOrApoio } = usePermission()
   const [atividades, setAtividades] = useState<{ id: string; nome: string }[]>([])
   const [profissionais, setProfissionais] = useState<{ id: string; nome_completo: string }[]>([])
+  const [registrosDoMes, setRegistrosDoMes] = useState<DescritivoRegistro[]>([])
   const [descForm, setDescForm] = useState<DescritivoForm>({
     atividade_id: '',
     atividade_desenvolvida: '',
@@ -52,6 +60,37 @@ export function Descritivo() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+
+  function getNomeProfissional(id: string) {
+    return profissionais.find((p) => p.id === id)?.nome_completo ?? id
+  }
+
+  function getNomeAtividade(id: string) {
+    return atividades.find((a) => a.id === id)?.nome ?? id
+  }
+
+  function getResumo(texto: string | null) {
+    if (!texto) return '—'
+    return texto.length > 70 ? `${texto.slice(0, 70)}...` : texto
+  }
+
+  async function carregarRegistrosDoMes() {
+    if (!user) return
+
+    let query = supabase
+      .from('descritivos_mensais')
+      .select('*')
+      .eq('mes', Number(mes))
+      .eq('ano', Number(ano))
+
+    if (!isAdminOrApoio()) {
+      query = query.eq('profissional_id', user.id)
+    }
+
+    const { data } = await query.order('criado_em', { ascending: false })
+    setRegistrosDoMes(data ?? [])
+  }
 
   useEffect(() => {
     async function load() {
@@ -83,10 +122,12 @@ export function Descritivo() {
         .order('nome_completo')
       if (profs) setProfissionais(profs)
 
+      await carregarRegistrosDoMes()
+
       setLoading(false)
     }
     load()
-  }, [])
+  }, [mes, ano, user?.id, user?.perfil])
 
   useEffect(() => {
     if (!descForm.atividade_id || !mes || !ano) return
@@ -104,6 +145,7 @@ export function Descritivo() {
       .maybeSingle()
       .then(({ data }) => {
         if (data) {
+          setEditingId(data.id)
           setDescForm({
             atividade_id: data.atividade_id,
             atividade_desenvolvida: data.atividade_desenvolvida ?? '',
@@ -113,6 +155,7 @@ export function Descritivo() {
             acontecimento: data.acontecimento ?? '',
           })
         } else {
+          setEditingId(null)
           setDescForm((prev) => ({
             ...prev,
             atividade_desenvolvida: '',
@@ -145,18 +188,9 @@ export function Descritivo() {
       acontecimento: descForm.acontecimento || null,
     }
 
-    const { data: existing } = await supabase
-      .from('descritivos_mensais')
-      .select('id')
-      .eq('profissional_id', profId)
-      .eq('atividade_id', descForm.atividade_id)
-      .eq('mes', Number(mes))
-      .eq('ano', Number(ano))
-      .maybeSingle()
-
     let err
-    if (existing) {
-      ;({ error: err } = await supabase.from('descritivos_mensais').update(payload).eq('id', existing.id))
+    if (editingId) {
+      ;({ error: err } = await supabase.from('descritivos_mensais').update(payload).eq('id', editingId))
     } else {
       ;({ error: err } = await supabase.from('descritivos_mensais').insert(payload))
     }
@@ -165,10 +199,50 @@ export function Descritivo() {
       setError(err.message)
     } else {
       setSuccess(true)
+      setEditingId(null)
       setTimeout(() => setSuccess(false), 3000)
+      await carregarRegistrosDoMes()
     }
 
     setSaving(false)
+  }
+
+  function editarRegistro(r: DescritivoRegistro) {
+    setEditingId(r.id)
+    setProfissionalId(r.profissional_id)
+    setDescForm({
+      atividade_id: r.atividade_id,
+      atividade_desenvolvida: r.atividade_desenvolvida ?? '',
+      frequencia: r.frequencia ?? '',
+      objetivos: r.objetivos ?? '',
+      relato: r.relato ?? '',
+      acontecimento: r.acontecimento ?? '',
+    })
+  }
+
+  async function excluirRegistro(id: string) {
+    const ok = window.confirm('Excluir este descritivo?')
+    if (!ok) return
+
+    const { error: err } = await supabase.from('descritivos_mensais').delete().eq('id', id)
+    if (err) {
+      setError(err.message)
+      return
+    }
+
+    if (editingId === id) {
+      setEditingId(null)
+      setDescForm({
+        atividade_id: '',
+        atividade_desenvolvida: '',
+        frequencia: '',
+        objetivos: '',
+        relato: '',
+        acontecimento: '',
+      })
+    }
+
+    await carregarRegistrosDoMes()
   }
 
   if (loading) return <Loading />
@@ -235,7 +309,8 @@ export function Descritivo() {
                 Atividade Desenvolvida
               </label>
               <textarea
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary min-h-[120px]"
+                rows={3}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-y min-h-[72px]"
                 value={descForm.atividade_desenvolvida}
                 onChange={(e) => setDescForm((prev) => ({ ...prev, atividade_desenvolvida: e.target.value }))}
                 placeholder="Descreva a atividade desenvolvida..."
@@ -246,7 +321,8 @@ export function Descritivo() {
                 Frequência Semanal da Atividade e Grupos Atendidos
               </label>
               <textarea
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary min-h-[80px]"
+                rows={3}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-y min-h-[72px]"
                 value={descForm.frequencia}
                 onChange={(e) => setDescForm((prev) => ({ ...prev, frequencia: e.target.value }))}
                 placeholder="Descreva a frequência semanal e grupos atendidos..."
@@ -257,7 +333,8 @@ export function Descritivo() {
                 Objetivos das Atividades Desenvolvidas no Mês
               </label>
               <textarea
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary min-h-[80px]"
+                rows={3}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-y min-h-[72px]"
                 value={descForm.objetivos}
                 onChange={(e) => setDescForm((prev) => ({ ...prev, objetivos: e.target.value }))}
                 placeholder="Descreva os objetivos..."
@@ -268,7 +345,8 @@ export function Descritivo() {
                 Relato das Atividades Desenvolvidas
               </label>
               <textarea
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary min-h-[120px]"
+                rows={4}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-y min-h-[88px]"
                 value={descForm.relato}
                 onChange={(e) => setDescForm((prev) => ({ ...prev, relato: e.target.value }))}
                 placeholder="Relate as atividades desenvolvidas (pode ser por semana ou mensal)..."
@@ -279,7 +357,8 @@ export function Descritivo() {
                 Registro de Acontecimento Relevante
               </label>
               <textarea
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary min-h-[80px]"
+                rows={3}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-y min-h-[72px]"
                 value={descForm.acontecimento}
                 onChange={(e) => setDescForm((prev) => ({ ...prev, acontecimento: e.target.value }))}
                 placeholder="Depoimentos, reações, feedback do trabalho..."
@@ -293,6 +372,62 @@ export function Descritivo() {
             </div>
           </div>
         )}
+
+        <div className="rounded-xl bg-white shadow-sm border border-gray-200 overflow-hidden">
+          <div className="border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-gray-900">Registros do mês</h2>
+            <span className="text-xs text-gray-500">{registrosDoMes.length} registro(s)</span>
+          </div>
+          {registrosDoMes.length === 0 ? (
+            <div className="px-4 py-6 text-sm text-gray-500">Nenhum descritivo lançado neste mês.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    {(isAdminOrApoio() || user?.perfil === 'admin') && (
+                      <th className="px-4 py-3 text-left font-medium text-gray-700">Profissional</th>
+                    )}
+                    <th className="px-4 py-3 text-left font-medium text-gray-700">Atividade</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-700">Resumo</th>
+                    <th className="px-4 py-3 text-center font-medium text-gray-700">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {registrosDoMes.map((r) => (
+                    <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
+                      {(isAdminOrApoio() || user?.perfil === 'admin') && (
+                        <td className="px-4 py-3 text-gray-600">{getNomeProfissional(r.profissional_id)}</td>
+                      )}
+                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{getNomeAtividade(r.atividade_id)}</td>
+                      <td className="px-4 py-3 text-gray-600 max-w-[420px] truncate whitespace-nowrap">
+                        {getResumo(r.atividade_desenvolvida)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => editarRegistro(r)}
+                            className="rounded-lg p-1 text-gray-500 hover:bg-gray-100"
+                            title="Editar"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => excluirRegistro(r.id)}
+                            className="rounded-lg p-1 text-red-500 hover:bg-red-50"
+                            title="Excluir"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

@@ -6,10 +6,11 @@ import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
 import { Input } from '@/components/ui/Input'
 import { Loading } from '@/components/ui/Loading'
-import { Save, Plus, Trash2, Clock, Lock } from 'lucide-react'
+import { Save, Plus, Trash2, Clock, Lock, Pencil } from 'lucide-react'
 import { format, getMonth, getYear } from 'date-fns'
 
 interface RegistroForm {
+  id?: string
   profissional_id: string
   atividade_id: string
   subatividade_id: string
@@ -37,6 +38,7 @@ interface UnidadeOption {
 }
 
 const emptyRegistro: RegistroForm = {
+  id: undefined,
   profissional_id: '',
   atividade_id: '',
   subatividade_id: '',
@@ -64,6 +66,19 @@ export function Quantitativo() {
   const mes = getMonth(new Date()) + 1
   const ano = getYear(new Date())
 
+  function getNomeAtividade(id: string) {
+    return atividades.find((a) => a.id === id)?.nome ?? id
+  }
+
+  function getNomeUnidade(id: string | null) {
+    if (!id) return '—'
+    return unidades.find((u) => u.id === id)?.nome ?? id
+  }
+
+  function getNomeProfissional(id: string) {
+    return profissionais.find((p) => p.id === id)?.nome_completo ?? id
+  }
+
   async function carregarRegistrosDoMes(fallback: any[] = []) {
     if (!user) return
 
@@ -90,27 +105,67 @@ export function Quantitativo() {
     setExistingRecords(fallback)
   }
 
-  function getNomeAtividade(id: string) {
-    return atividades.find((a) => a.id === id)?.nome ?? id
+  function editarRegistro(r: any) {
+    setRegistros([
+      {
+        id: r.id,
+        profissional_id: r.profissional_id,
+        atividade_id: r.atividade_id,
+        subatividade_id: r.subatividade_id ?? '',
+        data_referencia: r.data_referencia,
+        unidade_id: r.unidade_id ?? '',
+        qtd_idosos: r.qtd_idosos,
+        qtd_pcd: r.qtd_pcd,
+        qtd_colaboradores: r.qtd_colaboradores,
+      },
+    ])
   }
 
-  function getNomeUnidade(id: string | null) {
-    if (!id) return '—'
-    return unidades.find((u) => u.id === id)?.nome ?? id
+  async function excluirRegistro(id: string) {
+    const ok = window.confirm('Excluir este registro?')
+    if (!ok) return
+
+    const { error: err } = await supabase.from('registros_atividade').delete().eq('id', id)
+    if (err) {
+      setError(err.message)
+      return
+    }
+
+    await carregarRegistrosDoMes()
   }
 
   useEffect(() => {
     async function load() {
+      const ativQuery = isAdminOrApoio()
+        ? supabase.from('atividades').select('id, nome').eq('ativa', true).order('nome')
+        : supabase
+            .from('autorizacoes_atividade')
+            .select('atividade_id, atividades!inner(id, nome)')
+            .eq('usuario_id', user?.id)
+            .order('atividades(nome)')
+
       const [profRes, ativRes, unidRes, bloqueioRes] = await Promise.all([
         supabase.from('usuarios').select('id, nome_completo').eq('ativo', true).eq('tem_login', true).order('nome_completo'),
-        supabase.from('atividades').select('id, nome').eq('ativa', true).order('nome'),
+        ativQuery,
         supabase.from('unidades').select('id, nome').eq('ativa', true).order('nome'),
         supabase.rpc('periodo_bloqueado', { p_usuario_id: user?.id, p_mes: mes, p_ano: ano }),
       ])
 
       if (profRes.data) setProfissionais(profRes.data)
       if (ativRes.data) {
-        const ativs = ativRes.data.map((a) => ({ ...a, subatividades: [] }))
+        const ativs = isAdminOrApoio()
+          ? ativRes.data.map((a) => ({ ...a, subatividades: [] }))
+          : (() => {
+              const seen = new Set<string>()
+              return ativRes.data
+                .map((a: any) => a.atividades)
+                .filter((a: { id: string; nome: string }) => {
+                  if (seen.has(a.id)) return false
+                  seen.add(a.id)
+                  return true
+                })
+                .map((a: any) => ({ ...a, subatividades: [] }))
+            })()
         setAtividades(ativs)
       }
       if (unidRes.data) setUnidades(unidRes.data)
@@ -176,7 +231,7 @@ export function Quantitativo() {
     setError(null)
     setSuccess(null)
 
-    const registrosParaSalvar = registros.map((r) => ({
+    const payloadBase = (r: RegistroForm) => ({
       profissional_id: r.profissional_id,
       operador_id: user!.id,
       atividade_id: r.atividade_id,
@@ -186,23 +241,36 @@ export function Quantitativo() {
       qtd_idosos: r.qtd_idosos,
       qtd_pcd: r.qtd_pcd,
       qtd_colaboradores: r.qtd_colaboradores,
-    }))
+    })
 
-    const { error: err } = await supabase.from('registros_atividade').insert(registrosParaSalvar)
+    const updates = registros.filter((r) => r.id)
+    const inserts = registros.filter((r) => !r.id)
 
-    if (err) {
-      setError(err.message)
-    } else {
-      setRegistros([])
-      setSuccess('Registro salvo com sucesso.')
-
-      const fallbackRegistros = registrosParaSalvar.map((r, index) => ({
-        ...r,
-        id: `temp-${Date.now()}-${index}`,
-      }))
-
-      await carregarRegistrosDoMes(fallbackRegistros)
+    if (inserts.length > 0) {
+      const { error: insertError } = await supabase.from('registros_atividade').insert(inserts.map(payloadBase))
+      if (insertError) {
+        setError(insertError.message)
+        setSaving(false)
+        return
+      }
     }
+
+    for (const registro of updates) {
+      const { error: updateError } = await supabase
+        .from('registros_atividade')
+        .update(payloadBase(registro))
+        .eq('id', registro.id as string)
+
+      if (updateError) {
+        setError(updateError.message)
+        setSaving(false)
+        return
+      }
+    }
+
+    setRegistros([])
+    setSuccess('Registro salvo com sucesso.')
+    await carregarRegistrosDoMes()
 
     setSaving(false)
   }
@@ -268,8 +336,8 @@ export function Quantitativo() {
                   </tr>
                 </thead>
                 <tbody>
-                  {registros.map((r, i) => (
-                    <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
+                    {registros.map((r, i) => (
+                      <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
                       {(isAdminOrApoio() || user?.perfil === 'admin') && (
                         <td className="px-4 py-2">
                           <Select
@@ -381,22 +449,47 @@ export function Quantitativo() {
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200">
                       <th className="px-4 py-3 text-left font-medium text-gray-700">Data</th>
+                      {(isAdminOrApoio() || user?.perfil === 'admin') && (
+                        <th className="px-4 py-3 text-left font-medium text-gray-700">Profissional</th>
+                      )}
                       <th className="px-4 py-3 text-left font-medium text-gray-700">Atividade</th>
                       <th className="px-4 py-3 text-left font-medium text-gray-700">Unidade</th>
                       <th className="px-4 py-3 text-center font-medium text-gray-700">Idosos</th>
                       <th className="px-4 py-3 text-center font-medium text-gray-700">PCD</th>
                       <th className="px-4 py-3 text-center font-medium text-gray-700">Colab.</th>
+                      <th className="px-4 py-3 text-center font-medium text-gray-700">Ações</th>
                     </tr>
                   </thead>
                   <tbody>
                     {existingRecords.map((r) => (
                       <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
                         <td className="px-4 py-3 text-gray-600">{r.data_referencia}</td>
+                        {(isAdminOrApoio() || user?.perfil === 'admin') && (
+                          <td className="px-4 py-3 text-gray-600">{getNomeProfissional(r.profissional_id)}</td>
+                        )}
                         <td className="px-4 py-3 text-gray-600">{getNomeAtividade(r.atividade_id)}</td>
                         <td className="px-4 py-3 text-gray-600">{getNomeUnidade(r.unidade_id)}</td>
                         <td className="px-4 py-3 text-center text-gray-600">{r.qtd_idosos}</td>
                         <td className="px-4 py-3 text-center text-gray-600">{r.qtd_pcd}</td>
                         <td className="px-4 py-3 text-center text-gray-600">{r.qtd_colaboradores}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => editarRegistro(r)}
+                              className="rounded-lg p-1 text-gray-500 hover:bg-gray-100"
+                              title="Editar"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => excluirRegistro(r.id)}
+                              className="rounded-lg p-1 text-red-500 hover:bg-red-50"
+                              title="Excluir"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
