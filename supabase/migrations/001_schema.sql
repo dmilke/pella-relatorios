@@ -191,18 +191,27 @@ alter table notificacoes enable row level security;
 alter table auditoria enable row level security;
 
 -- Helper: perfil do usuário logado
-create or replace function auth.perfil_usuario()
-returns perfil_usuario
-language sql stable
+-- SECURITY DEFINER evita recursão com RLS em usuarios
+create or replace function public.auth_perfil()
+returns perfil_acesso
+language plpgsql
+security definer
+set search_path = public
 as $$
-  select coalesce(
-    (select u.perfil from public.usuarios u where u.id = auth.uid()),
-    'profissional'::perfil_usuario
-  );
+declare
+  v_perfil perfil_acesso;
+begin
+  select u.perfil
+    into v_perfil
+  from public.usuarios u
+  where u.id = auth.uid();
+
+  return coalesce(v_perfil, 'profissional'::perfil_acesso);
+end;
 $$;
 
 -- Helper: usuario_id a partir do auth.uid()
-create or replace function auth.usuario_id()
+create or replace function public.auth_usuario_id()
 returns uuid
 language sql stable
 as $$
@@ -216,107 +225,107 @@ $$;
 -- usuarios
 create policy "Admin pode gerenciar usuarios"
   on usuarios for all
-  using (auth.perfil_usuario() = 'admin')
-  with check (auth.perfil_usuario() = 'admin');
+  using (auth_perfil() = 'admin')
+  with check (auth_perfil() = 'admin');
 
 create policy "Usuarios veem seus proprios dados"
   on usuarios for select
-  using (id = auth.usuario_id());
+  using (id = auth_usuario_id());
 
 -- atividades (catálogo) - todos veem, só admin gerencia
 create policy "Todos veem atividades ativas"
   on atividades for select
-  using (ativa = true OR auth.perfil_usuario() = 'admin');
+  using (ativa = true OR auth_perfil() = 'admin');
 
 create policy "Admin gerencia atividades"
   on atividades for insert
-  with check (auth.perfil_usuario() = 'admin');
+  with check (auth_perfil() = 'admin');
 
 create policy "Admin atualiza atividades"
   on atividades for update
-  using (auth.perfil_usuario() = 'admin')
-  with check (auth.perfil_usuario() = 'admin');
+  using (auth_perfil() = 'admin')
+  with check (auth_perfil() = 'admin');
 
 -- subatividades
 create policy "Todos veem subatividades ativas"
   on subatividades for select
-  using (ativa = true OR auth.perfil_usuario() = 'admin');
+  using (ativa = true OR auth_perfil() = 'admin');
 
 create policy "Admin gerencia subatividades"
   on subatividades for all
-  using (auth.perfil_usuario() = 'admin')
-  with check (auth.perfil_usuario() = 'admin');
+  using (auth_perfil() = 'admin')
+  with check (auth_perfil() = 'admin');
 
 -- unidades
 create policy "Todos veem unidades ativas"
   on unidades for select
-  using (ativa = true OR auth.perfil_usuario() = 'admin');
+  using (ativa = true OR auth_perfil() = 'admin');
 
 create policy "Admin gerencia unidades"
   on unidades for all
-  using (auth.perfil_usuario() = 'admin')
-  with check (auth.perfil_usuario() = 'admin');
+  using (auth_perfil() = 'admin')
+  with check (auth_perfil() = 'admin');
 
 -- autorizacoes_atividade
 create policy "Admin ve todas autorizacoes"
   on autorizacoes_atividade for select
-  using (auth.perfil_usuario() = 'admin');
+  using (auth_perfil() = 'admin');
 
 create policy "Profissional ve suas proprias autorizacoes"
   on autorizacoes_atividade for select
-  using (usuario_id = auth.usuario_id());
+  using (usuario_id = auth_usuario_id());
 
 create policy "Admin gerencia autorizacoes"
   on autorizacoes_atividade for all
-  using (auth.perfil_usuario() = 'admin')
-  with check (auth.perfil_usuario() = 'admin');
+  using (auth_perfil() = 'admin')
+  with check (auth_perfil() = 'admin');
 
 -- registros_atividade
 create policy "Admin ve todos registros"
   on registros_atividade for select
-  using (auth.perfil_usuario() = 'admin');
+  using (auth_perfil() = 'admin');
 
 create policy "Analista ve todos registros"
   on registros_atividade for select
-  using (auth.perfil_usuario() = 'analista');
+  using (auth_perfil() = 'analista');
 
 create policy "Profissional ve proprios registros"
   on registros_atividade for select
-  using (profissional_id = auth.usuario_id());
+  using (profissional_id = auth_usuario_id());
 
 create policy "Apoio ve todos registros"
   on registros_atividade for select
-  using (auth.perfil_usuario() = 'apoio');
+  using (auth_perfil() = 'apoio');
 
 create policy "Profissional e apoio podem inserir"
   on registros_atividade for insert
   with check (
-    auth.perfil_usuario() in ('profissional', 'apoio', 'admin')
+    auth_perfil() in ('profissional', 'apoio', 'admin')
   );
 
 create policy "Profissional atualiza proprios registros"
   on registros_atividade for update
-  using (profissional_id = auth.usuario_id())
-  with check (profissional_id = auth.usuario_id());
+  using (profissional_id = auth_usuario_id())
+  with check (profissional_id = auth_usuario_id());
 
 create policy "Admin atualiza qualquer registro"
   on registros_atividade for update
-  using (auth.perfil_usuario() = 'admin')
-  with check (auth.perfil_usuario() = 'admin');
+  using (auth_perfil() = 'admin')
+  with check (auth_perfil() = 'admin');
 
 create policy "Apoio atualiza qualquer registro"
   on registros_atividade for update
-  using (auth.perfil_usuario() = 'apoio')
-  with check (auth.perfil_usuario() = 'apoio');
+  using (auth_perfil() = 'apoio')
+  with check (auth_perfil() = 'apoio');
 
 -- registros_encaminhamento
 create policy "Admin ve todos encaminhamentos"
   on registros_encaminhamento for select
-  using (auth.perfil_usuario() = 'admin');
+  using (auth_perfil() = 'admin');
 
 create policy "Operador ve proprios encaminhamentos"
   on registros_encaminhamento for select
-  using (operador_id = auth.usuario_id());
+  using (operador_id = auth_usuario_id());
 
 create policy "Autorizados em Enfermagem podem inserir"
   on registros_encaminhamento for insert
@@ -324,7 +333,7 @@ create policy "Autorizados em Enfermagem podem inserir"
     exists (
       select 1 from autorizacoes_atividade aa
       join atividades a on a.id = aa.atividade_id
-      where aa.usuario_id = auth.usuario_id()
+      where aa.usuario_id = auth_usuario_id()
         and a.nome = 'Enfermagem'
         and aa.local_obrigatorio = true
     )
@@ -332,47 +341,47 @@ create policy "Autorizados em Enfermagem podem inserir"
 
 create policy "Admin corrige qualquer encaminhamento"
   on registros_encaminhamento for update
-  using (auth.perfil_usuario() = 'admin')
-  with check (auth.perfil_usuario() = 'admin');
+  using (auth_perfil() = 'admin')
+  with check (auth_perfil() = 'admin');
 
 create policy "Operador corrige proprios encaminhamentos"
   on registros_encaminhamento for update
-  using (operador_id = auth.usuario_id())
-  with check (operador_id = auth.usuario_id());
+  using (operador_id = auth_usuario_id())
+  with check (operador_id = auth_usuario_id());
 
 -- descritivos_mensais
 create policy "Admin ve todos descritivos"
   on descritivos_mensais for select
-  using (auth.perfil_usuario() = 'admin');
+  using (auth_perfil() = 'admin');
 
 create policy "Profissional ve proprios descritivos"
   on descritivos_mensais for select
-  using (profissional_id = auth.usuario_id());
+  using (profissional_id = auth_usuario_id());
 
 create policy "Apoio ve todos descritivos"
   on descritivos_mensais for select
-  using (auth.perfil_usuario() = 'apoio');
+  using (auth_perfil() = 'apoio');
 
 create policy "Profissional e apoio podem inserir descritivos"
   on descritivos_mensais for insert
   with check (
-    auth.perfil_usuario() in ('profissional', 'apoio', 'admin')
+    auth_perfil() in ('profissional', 'apoio', 'admin')
   );
 
 create policy "Profissional atualiza proprios descritivos"
   on descritivos_mensais for update
-  using (profissional_id = auth.usuario_id())
-  with check (profissional_id = auth.usuario_id());
+  using (profissional_id = auth_usuario_id())
+  with check (profissional_id = auth_usuario_id());
 
 create policy "Admin atualiza qualquer descritivo"
   on descritivos_mensais for update
-  using (auth.perfil_usuario() = 'admin')
-  with check (auth.perfil_usuario() = 'admin');
+  using (auth_perfil() = 'admin')
+  with check (auth_perfil() = 'admin');
 
 create policy "Apoio atualiza qualquer descritivo"
   on descritivos_mensais for update
-  using (auth.perfil_usuario() = 'apoio')
-  with check (auth.perfil_usuario() = 'apoio');
+  using (auth_perfil() = 'apoio')
+  with check (auth_perfil() = 'apoio');
 
 -- periodos
 create policy "Todos veem periodos"
@@ -381,23 +390,23 @@ create policy "Todos veem periodos"
 
 create policy "Admin gerencia periodos"
   on periodos for all
-  using (auth.perfil_usuario() = 'admin')
-  with check (auth.perfil_usuario() = 'admin');
+  using (auth_perfil() = 'admin')
+  with check (auth_perfil() = 'admin');
 
 -- notificacoes
 create policy "Usuario ve suas notificacoes"
   on notificacoes for select
-  using (destinatario_id = auth.usuario_id());
+  using (destinatario_id = auth_usuario_id());
 
 create policy "Usuario marca como lida"
   on notificacoes for update
-  using (destinatario_id = auth.usuario_id())
-  with check (destinatario_id = auth.usuario_id());
+  using (destinatario_id = auth_usuario_id())
+  with check (destinatario_id = auth_usuario_id());
 
 -- auditoria
 create policy "Admin ve auditoria"
   on auditoria for select
-  using (auth.perfil_usuario() = 'admin');
+  using (auth_perfil() = 'admin');
 
 -- ============================================================
 -- FUNÇÕES HELPERS
