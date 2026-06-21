@@ -64,6 +64,27 @@ export function Quantitativo() {
   const mes = getMonth(new Date()) + 1
   const ano = getYear(new Date())
 
+  async function carregarRegistrosDoMes() {
+    if (!user) return
+
+    const inicioMes = format(new Date(ano, mes - 1, 1), 'yyyy-MM-dd')
+    const inicioProximoMes = format(new Date(ano, mes, 1), 'yyyy-MM-dd')
+
+    let query = supabase
+      .from('registros_atividade')
+      .select('*')
+      .gte('data_referencia', inicioMes)
+      .lt('data_referencia', inicioProximoMes)
+
+    if (!isAdminOrApoio()) {
+      query = query.eq('profissional_id', user.id)
+    }
+
+    const { data } = await query.order('data_referencia', { ascending: false })
+
+    setExistingRecords(data ?? [])
+  }
+
   function getNomeAtividade(id: string) {
     return atividades.find((a) => a.id === id)?.nome ?? id
   }
@@ -75,9 +96,6 @@ export function Quantitativo() {
 
   useEffect(() => {
     async function load() {
-      const inicioMes = format(new Date(ano, mes - 1, 1), 'yyyy-MM-dd')
-      const inicioProximoMes = format(new Date(ano, mes, 1), 'yyyy-MM-dd')
-
       const [profRes, ativRes, unidRes, bloqueioRes] = await Promise.all([
         supabase.from('usuarios').select('id, nome_completo').eq('ativo', true).eq('tem_login', true).order('nome_completo'),
         supabase.from('atividades').select('id, nome').eq('ativa', true).order('nome'),
@@ -97,16 +115,7 @@ export function Quantitativo() {
       })
 
       // Se for profissional (não admin/apoio), carregar registros existentes
-      if (user && !isAdminOrApoio()) {
-        const { data } = await supabase
-          .from('registros_atividade')
-          .select('*')
-          .eq('profissional_id', user.id)
-          .gte('data_referencia', inicioMes)
-          .lt('data_referencia', inicioProximoMes)
-          .order('data_referencia', { ascending: false })
-        if (data) setExistingRecords(data)
-      }
+      await carregarRegistrosDoMes()
 
       setLoading(false)
     }
@@ -181,21 +190,7 @@ export function Quantitativo() {
     } else {
       setRegistros([])
       setSuccess('Registro salvo com sucesso.')
-
-      if (user && !isAdminOrApoio()) {
-        const inicioMes = format(new Date(ano, mes - 1, 1), 'yyyy-MM-dd')
-        const inicioProximoMes = format(new Date(ano, mes, 1), 'yyyy-MM-dd')
-
-        const { data } = await supabase
-          .from('registros_atividade')
-          .select('*')
-          .eq('profissional_id', user.id)
-          .gte('data_referencia', inicioMes)
-          .lt('data_referencia', inicioProximoMes)
-          .order('data_referencia', { ascending: false })
-
-        if (data) setExistingRecords(data)
-      }
+      await carregarRegistrosDoMes()
     }
 
     setSaving(false)
@@ -360,11 +355,16 @@ export function Quantitativo() {
             </div>
           </div>
 
-          {existingRecords.length > 0 && (
-            <div className="rounded-xl bg-white shadow-sm border border-gray-200 overflow-hidden">
-              <div className="border-b border-gray-200 px-4 py-3">
-                <h2 className="text-sm font-semibold text-gray-900">Registros do mês</h2>
+          <div className="rounded-xl bg-white shadow-sm border border-gray-200 overflow-hidden">
+            <div className="border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-gray-900">Registros do mês</h2>
+              <span className="text-xs text-gray-500">{existingRecords.length} registro(s)</span>
+            </div>
+            {existingRecords.length === 0 ? (
+              <div className="px-4 py-6 text-sm text-gray-500">
+                Nenhum registro lançado neste mês.
               </div>
+            ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -391,8 +391,8 @@ export function Quantitativo() {
                   </tbody>
                 </table>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </>
       )}
     </div>
