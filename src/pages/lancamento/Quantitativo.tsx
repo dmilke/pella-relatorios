@@ -95,14 +95,13 @@ export function Quantitativo() {
       .gte('data_referencia', inicioMes)
       .lt('data_referencia', inicioProximoMes)
 
-    const filtroProfissionalId = profissionalIdOverride ?? profissionalFiltroId
-
-    if (canChooseProfissional) {
+    if (!canChooseProfissional) {
+      query = query.eq('profissional_id', user.id)
+    } else {
+      const filtroProfissionalId = profissionalIdOverride ?? profissionalFiltroId
       if (filtroProfissionalId) {
         query = query.eq('profissional_id', filtroProfissionalId)
       }
-    } else {
-      query = query.eq('profissional_id', user.id)
     }
 
     const { data } = await query.order('data_referencia', { ascending: false })
