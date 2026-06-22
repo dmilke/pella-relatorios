@@ -514,6 +514,9 @@ export function Quantitativo() {
                     {existingRecords.slice((page - 1) * perPage, page * perPage).map((r) => (
                       <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
                         <td className="px-4 py-3 text-gray-600">{r.data_referencia}</td>
+                        {canChooseProfissional && (
+                          <td className="px-4 py-3 text-gray-600">{getNomeProfissional(r.profissional_id)}</td>
+                        )}
                         <td className="px-4 py-3 text-gray-600">{getNomeAtividade(r.atividade_id)}</td>
                         <td className="px-4 py-3 text-gray-600">{getNomeUnidade(r.unidade_id)}</td>
                         <td className="px-4 py-3 text-center text-gray-600">{r.qtd_idosos}</td>
