@@ -136,13 +136,22 @@ export function Quantitativo() {
     const ok = window.confirm('Excluir este registro?')
     if (!ok) return
 
-    const { error: err } = await supabase.from('registros_atividade').delete().eq('id', id)
+    console.log('Excluindo registro:', id);
+    
+    const { data, error: err } = await supabase.from('registros_atividade').delete().eq('id', id)
+    console.log('Resultado delete:', data);
+    console.log('Erro delete:', err);
+
     if (err) {
       setError(err.message)
+      console.error('Erro ao excluir registro:', err);
       return
     }
 
+    // Somente remove do estado se a exclusão no banco for bem-sucedida
     setExistingRecords((prev) => prev.filter((registro) => registro.id !== id))
+    setSuccess('Registro excluído com sucesso.')
+    setTimeout(() => setSuccess(null), 3000)
   }
 
   useEffect(() => {
