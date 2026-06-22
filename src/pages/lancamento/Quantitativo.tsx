@@ -213,6 +213,23 @@ export function Quantitativo() {
         )
         
         setAtividades(atividadesComSubatividades)
+      } else {
+        // Fallback: carregar todas as atividades ativas para evitar select vazio
+        if (isAdminOrApoio()) {
+          const { data } = await supabase
+            .from('atividades')
+            .select('id, nome')
+            .eq('ativa', true)
+            .order('nome')
+          
+          if (data) {
+            const atividadesSemSubatividades = data.map((a) => ({ ...a, subatividades: [] }))
+            setAtividades(atividadesSemSubatividades)
+          }
+        } else {
+          // Para profissionais, mesmo que não tenha autorizações, carregar atividades vazias
+          setAtividades([])
+        }
       }
       if (unidRes.data) setUnidades(unidRes.data)
       setPeriodoInfo({
