@@ -91,7 +91,12 @@ export function Quantitativo() {
 
     let query = supabase
       .from('registros_atividade')
-      .select('*')
+      .select(`
+        *,
+        atividades (nome),
+        unidades (nome),
+        subatividades (nome)
+      `)
       .gte('data_referencia', inicioMes)
       .lt('data_referencia', inicioProximoMes)
 
@@ -561,8 +566,8 @@ export function Quantitativo() {
                         {canChooseProfissional && (
                           <td className="px-4 py-3 text-gray-600">{getNomeProfissional(r.profissional_id)}</td>
                         )}
-                        <td className="px-4 py-3 text-gray-600">{getNomeAtividade(r.atividade_id)}</td>
-                        <td className="px-4 py-3 text-gray-600">{getNomeUnidade(r.unidade_id)}</td>
+                        <td className="px-4 py-3 text-gray-600">{r.atividades?.nome ?? r.atividade_id}</td>
+                        <td className="px-4 py-3 text-gray-600">{r.unidades?.nome ?? '—'}</td>
                         <td className="px-4 py-3 text-center text-gray-600">{r.qtd_idosos}</td>
                         <td className="px-4 py-3 text-center text-gray-600">{r.qtd_pcd}</td>
                         <td className="px-4 py-3 text-center text-gray-600">{r.qtd_colaboradores}</td>
