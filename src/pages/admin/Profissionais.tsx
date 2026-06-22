@@ -43,9 +43,14 @@ export function Profissionais() {
   const [saving, setSaving] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [atividades, setAtividades] = useState<{ id: string; nome: string }[]>([])
+  const [atividadesIds, setAtividadesIds] = useState<string[]>([])
 
   useEffect(() => {
     loadUsuarios()
+    supabase.from('atividades').select('id, nome').eq('ativa', true).order('nome').then(({ data }) => {
+      if (data) setAtividades(data)
+    })
   }, [])
 
   async function loadUsuarios() {
@@ -59,6 +64,7 @@ export function Profissionais() {
     setEditId(null)
     setShowForm(false)
     setError(null)
+    setAtividadesIds([])
   }
 
   function editUsuario(u: any) {
@@ -73,6 +79,15 @@ export function Profissionais() {
     })
     setEditId(u.id)
     setShowForm(true)
+    const atividade = atividades.find((a) => a.nome === u.area_profissao)
+    setAtividadesIds(atividade ? [atividade.id] : [])
+    supabase
+      .from('autorizacoes_atividade')
+      .select('atividade_id')
+      .eq('usuario_id', u.id)
+      .then(({ data }) => {
+        if (data) setAtividadesIds(data.map((a) => a.atividade_id))
+      })
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -80,16 +95,25 @@ export function Profissionais() {
     setSaving(true)
     setError(null)
 
+    const atividadeSelecionada = atividades.find((a) => a.nome === form.area_profissao)
+    const atividadeId = atividadeSelecionada?.id ?? null
+    const areaProfissaoValue = atividadeSelecionada?.nome ?? form.area_profissao
+
     if (editId) {
       const { error: err } = await supabase
         .from('usuarios')
-        .update({ nome_completo: form.nome_completo, area_profissao: form.area_profissao, conselho: form.conselho || null, email: form.email || null, perfil: form.perfil })
+        .update({ nome_completo: form.nome_completo, area_profissao: areaProfissaoValue, conselho: form.conselho || null, email: form.email || null, perfil: form.perfil })
         .eq('id', editId)
 
       if (err) {
         setError(err.message)
         setSaving(false)
         return
+      }
+
+      await supabase.from('autorizacoes_atividade').delete().eq('usuario_id', editId)
+      if (atividadeId) {
+        await supabase.from('autorizacoes_atividade').insert({ usuario_id: editId, atividade_id: atividadeId })
       }
 
       if (form.senha) {
@@ -121,7 +145,7 @@ export function Profissionais() {
             },
             body: JSON.stringify({
               nome_completo: form.nome_completo,
-              area_profissao: form.area_profissao,
+              area_profissao: areaProfissaoValue,
               conselho: form.conselho,
               email: form.email,
               perfil_acesso: form.perfil,
@@ -135,22 +159,33 @@ export function Profissionais() {
           const errData = await res.json()
           setError(errData.error || 'Erro ao criar usuário')
         } else {
+          const userData = await res.json()
+          if (atividadeId) {
+            await supabase.from('autorizacoes_atividade').insert({ usuario_id: userData.id, atividade_id: atividadeId })
+          }
           await loadUsuarios()
           resetForm()
         }
       } else {
-        const { error: err } = await supabase.from('usuarios').insert({
-          nome_completo: form.nome_completo,
-          area_profissao: form.area_profissao,
-          conselho: form.conselho || null,
-          email: null,
-          perfil: form.perfil,
-          tem_login: false,
-        })
+        const { data: newUser, error: err } = await supabase
+          .from('usuarios')
+          .insert({
+            nome_completo: form.nome_completo,
+            area_profissao: areaProfissaoValue,
+            conselho: form.conselho || null,
+            email: null,
+            perfil: form.perfil,
+            tem_login: false,
+          })
+          .select('id')
+          .single()
 
         if (err) {
           setError(err.message)
         } else {
+          if (atividadeId) {
+            await supabase.from('autorizacoes_atividade').insert({ usuario_id: newUser.id, atividade_id: atividadeId })
+          }
           await loadUsuarios()
           resetForm()
         }
@@ -188,10 +223,17 @@ export function Profissionais() {
               onChange={(e) => setForm((f) => ({ ...f, nome_completo: e.target.value }))}
               required
             />
-            <Input
+            <Select
               label="Área/Profissão"
               value={form.area_profissao}
-              onChange={(e) => setForm((f) => ({ ...f, area_profissao: e.target.value }))}
+              onChange={(e) => {
+                const nome = e.target.value
+                const atividade = atividades.find((a) => a.nome === nome)
+                setForm((f) => ({ ...f, area_profissao: nome }))
+                setAtividadesIds(atividade ? [atividade.id] : [])
+              }}
+              options={atividades.map((a) => ({ value: a.nome, label: a.nome }))}
+              placeholder="Selecione..."
               required
             />
             <Input

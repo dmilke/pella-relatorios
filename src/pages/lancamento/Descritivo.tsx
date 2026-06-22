@@ -102,25 +102,8 @@ export function Descritivo() {
 
   useEffect(() => {
     async function load() {
-      let query = supabase.from('autorizacoes_atividade').select('atividade_id, atividades!inner(id, nome)')
-
-      if (user && !isAdminOrApoio()) {
-        query = query.eq('usuario_id', user.id)
-      }
-
-      const { data: autorizacoes } = await query.order('atividades(nome)')
-
-      if (autorizacoes) {
-        const seen = new Set<string>()
-        const ativs = autorizacoes
-          .map((a: any) => a.atividades)
-          .filter((a: { id: string; nome: string }) => {
-            if (seen.has(a.id)) return false
-            seen.add(a.id)
-            return true
-          })
-        setAtividades(ativs)
-      }
+      const { data: ativs } = await supabase.from('atividades').select('id, nome').eq('ativa', true).order('nome')
+      if (ativs) setAtividades(ativs)
 
       const { data: profs } = await supabase
         .from('usuarios')
