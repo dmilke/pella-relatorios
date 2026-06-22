@@ -176,6 +176,16 @@ export function Quantitativo() {
         supabase.rpc('periodo_bloqueado', { p_usuario_id: user?.id, p_mes: mes, p_ano: ano }),
       ])
 
+      console.log('user', user)
+      console.log('ativQuery used:', isAdminOrApoio() ? 'from atividades diretamente' : 'from autorizacoes_atividade')
+      console.log('ativRes', ativRes)
+      console.log('ativRes.data', ativRes.data)
+      console.log('ativRes.error', ativRes.error)
+
+      if (ativRes.error) {
+        console.error('Erro na consulta de atividades:', ativRes.error)
+      }
+
       const selectedProfissionalId = canChooseProfissional
         ? profRes.data?.some((p) => p.id === profissionalFiltroId)
           ? profissionalFiltroId
@@ -227,6 +237,7 @@ export function Quantitativo() {
         )
         
         setAtividades(atividadesComSubatividades)
+        console.log('Atividades finais montadas:', atividadesComSubatividades)
       } else {
         // Fallback: carregar todas as atividades ativas para evitar select vazio
         if (isAdminOrApoio()) {
