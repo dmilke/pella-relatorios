@@ -31,7 +31,7 @@ export function Sidebar() {
     const channel = supabase
       .channel('notificacoes')
       .on('postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'notificacoes', filter: `usuario_id=eq.${user.id}` },
+        { event: 'INSERT', schema: 'public', table: 'notificacoes', filter: `destinatario_id=eq.${user.id}` },
         () => setNotifCount((c) => c + 1)
       )
       .subscribe()
@@ -39,7 +39,7 @@ export function Sidebar() {
     supabase
       .from('notificacoes')
       .select('id', { count: 'exact', head: true })
-      .eq('usuario_id', user.id)
+      .eq('destinatario_id', user.id)
       .eq('lida', false)
       .then(({ count }) => setNotifCount(count ?? 0))
 
