@@ -194,7 +194,25 @@ export function Quantitativo() {
                 })
                 .map((a: any) => ({ ...a, subatividades: [] }))
             })()
-        setAtividades(ativs)
+        
+        // Carregar subatividades para todas as atividades
+        const atividadesComSubatividades = await Promise.all(
+          ativs.map(async (atividade: any) => {
+            const { data } = await supabase
+              .from('subatividades')
+              .select('id, nome')
+              .eq('atividade_id', atividade.id)
+              .eq('ativa', true)
+              .order('nome')
+            
+            return {
+              ...atividade,
+              subatividades: data || []
+            }
+          })
+        )
+        
+        setAtividades(atividadesComSubatividades)
       }
       if (unidRes.data) setUnidades(unidRes.data)
       setPeriodoInfo({
